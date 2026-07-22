@@ -1,6 +1,7 @@
 /* ============================================================
    数据管家 · Data Manager
    高级感 UI —— 玻璃拟态 / 柔和阴影 / 精致微交互
+   桌面 + 手机酒馆双端适配
    ============================================================ */
 
 #stdm_overlay,
@@ -132,8 +133,6 @@
     transition: color 0.2s ease, background 0.2s ease;
 }
 
-.stdm_tab:hover { color: var(--stdm-text); background: var(--stdm-glass-hi); }
-
 .stdm_tab.stdm_active { color: #fff; }
 
 .stdm_tab.stdm_active::after {
@@ -200,11 +199,6 @@
     transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.stdm_btn:hover {
-    background: rgba(255, 255, 255, 0.13);
-    border-color: rgba(255, 255, 255, 0.2);
-}
-
 .stdm_btn:active { transform: translateY(1px) scale(0.98); }
 
 .stdm_btn[disabled] {
@@ -222,11 +216,6 @@
     box-shadow: 0 6px 18px -6px rgba(255, 77, 125, 0.6);
 }
 
-#stdm_delete:hover:not([disabled]) {
-    box-shadow: 0 10px 26px -6px rgba(255, 77, 125, 0.75);
-    filter: brightness(1.06);
-}
-
 #stdm_delete[disabled] {
     background: var(--stdm-glass-hi);
     color: var(--stdm-text);
@@ -238,17 +227,10 @@
     color: #ff9a9a;
 }
 
-.stdm_btn.stdm_danger:hover {
-    background: rgba(255, 107, 107, 0.16);
-    border-color: rgba(255, 107, 107, 0.6);
-}
-
 #stdm_undo {
     border-color: rgba(124, 156, 255, 0.4);
     color: #b9c8ff;
 }
-
-#stdm_undo:hover:not([disabled]) { background: rgba(124, 156, 255, 0.14); }
 
 #stdm_close {
     padding: 8px 12px;
@@ -260,21 +242,29 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 auto;
 }
 
-#stdm_close:hover {
-    background: rgba(255, 107, 107, 0.18);
-    border-color: rgba(255, 107, 107, 0.5);
-    color: #ff9a9a;
-    transform: rotate(90deg);
+/* hover 效果只在支持真正 hover 的设备上启用（手机不触发） */
+@media (hover: hover) {
+    .stdm_tab:hover { color: var(--stdm-text); background: var(--stdm-glass-hi); }
+    .stdm_btn:hover { background: rgba(255, 255, 255, 0.13); border-color: rgba(255, 255, 255, 0.2); }
+    #stdm_delete:hover:not([disabled]) { box-shadow: 0 10px 26px -6px rgba(255, 77, 125, 0.75); filter: brightness(1.06); }
+    .stdm_btn.stdm_danger:hover { background: rgba(255, 107, 107, 0.16); border-color: rgba(255, 107, 107, 0.6); }
+    #stdm_undo:hover:not([disabled]) { background: rgba(124, 156, 255, 0.14); }
+    #stdm_close:hover { background: rgba(255, 107, 107, 0.18); border-color: rgba(255, 107, 107, 0.5); color: #ff9a9a; transform: rotate(90deg); }
+    #stdm_list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); background-clip: padding-box; }
+    #stdm_editor_save:hover { filter: brightness(1.08); }
+    .stdm_row:hover { background: var(--stdm-glass-hi); border-color: var(--stdm-line); }
+    input[type="checkbox"]:hover { border-color: var(--stdm-accent); }
 }
 
 /* ---------- 复选框 ---------- */
 #stdm_overlay input[type="checkbox"] {
     appearance: none;
     -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     border-radius: 6px;
     border: 1.5px solid rgba(255, 255, 255, 0.28);
     background: rgba(0, 0, 0, 0.25);
@@ -284,8 +274,6 @@
     transition: background 0.18s ease, border-color 0.18s ease;
 }
 
-#stdm_overlay input[type="checkbox"]:hover { border-color: var(--stdm-accent); }
-
 #stdm_overlay input[type="checkbox"]:checked {
     background: linear-gradient(135deg, var(--stdm-accent), var(--stdm-accent-2));
     border-color: transparent;
@@ -294,8 +282,8 @@
 #stdm_overlay input[type="checkbox"]:checked::after {
     content: '';
     position: absolute;
-    left: 5.5px;
-    top: 2px;
+    left: 6px;
+    top: 2.5px;
     width: 4px;
     height: 9px;
     border: solid #fff;
@@ -307,6 +295,7 @@
 #stdm_list {
     flex: 1 1 auto;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 8px 14px 16px;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
@@ -319,7 +308,6 @@
     border: 2px solid transparent;
     background-clip: padding-box;
 }
-#stdm_list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); background-clip: padding-box; }
 
 .stdm_group {
     margin: 18px 6px 8px;
@@ -349,11 +337,6 @@
     border-radius: var(--stdm-radius-sm);
     border: 1px solid transparent;
     transition: background 0.16s ease, border-color 0.16s ease, transform 0.1s ease;
-}
-
-.stdm_row:hover {
-    background: var(--stdm-glass-hi);
-    border-color: var(--stdm-line);
 }
 
 .stdm_avatar {
@@ -386,16 +369,19 @@
     white-space: nowrap;
 }
 
-/* 行内操作按钮：默认淡出，hover 行时浮现 */
+/* 行内操作按钮 —— 默认常显（触屏友好）；桌面 hover 时淡入 */
 .stdm_rowactions {
     flex: 0 0 auto;
     display: flex;
     gap: 5px;
-    opacity: 0.35;
+    opacity: 1;
     transition: opacity 0.18s ease;
 }
 
-.stdm_row:hover .stdm_rowactions { opacity: 1; }
+@media (hover: hover) {
+    .stdm_rowactions { opacity: 0.35; }
+    .stdm_row:hover .stdm_rowactions { opacity: 1; }
+}
 
 .stdm_rowactions .stdm_btn {
     padding: 4px 10px;
@@ -449,10 +435,7 @@
     font-family: 'Inter', -apple-system, system-ui, sans-serif;
 }
 
-#stdm_editor_title {
-    font-weight: 600;
-    font-size: 0.98em;
-}
+#stdm_editor_title { font-weight: 600; font-size: 0.98em; }
 
 #stdm_editor_text {
     flex: 1 1 auto;
@@ -468,6 +451,7 @@
     line-height: 1.6;
     outline: none;
     tab-size: 2;
+    -webkit-overflow-scrolling: touch;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
@@ -486,15 +470,118 @@
     box-shadow: 0 6px 18px -6px rgba(124, 156, 255, 0.6);
 }
 
-#stdm_editor_save:hover { filter: brightness(1.08); }
-
 /* ---------- 工具 ---------- */
 .stdm_flexrow { display: flex; gap: 10px; align-items: center; }
 .stdm_spacer { flex: 1 1 auto; }
 
-/* 空状态 */
 #stdm_list > div[style*="text-align"] {
     color: var(--stdm-text-dim) !important;
     font-size: 0.9em;
     padding: 48px 20px !important;
+}
+
+/* ============================================================
+   手机酒馆适配 —— 窄屏全屏化
+   ============================================================ */
+@media (max-width: 640px) {
+    #stdm_overlay { padding: 0; }
+
+    /* 面板铺满整个屏幕 */
+    #stdm_modal {
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        max-width: 100vw;
+        border-radius: 0;
+        border: none;
+        animation: stdm-fade 0.24s ease;
+    }
+    #stdm_modal::before { display: none; }
+
+    /* 头部：标题独占一行，控件换行到下面 */
+    #stdm_header {
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        padding: 12px 14px;
+        padding-top: max(12px, env(safe-area-inset-top));
+    }
+    #stdm_header .stdm_title { flex: 1 1 100%; margin-right: 0; font-size: 1.1em; }
+    #stdm_header label { order: 3; font-size: 0.78em; }
+    #stdm_undo { order: 2; }
+    #stdm_close {
+        order: 1;
+        position: absolute;
+        top: max(10px, env(safe-area-inset-top));
+        right: 12px;
+        width: 38px;
+        height: 38px;
+    }
+
+    /* 标签：横向滑动，不换行 */
+    #stdm_tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        gap: 2px;
+        padding: 4px 12px 0;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+    }
+    #stdm_tabs::-webkit-scrollbar { display: none; }
+    .stdm_tab {
+        padding: 11px 14px;
+        font-size: 0.9em;
+        scroll-snap-align: start;
+    }
+
+    /* 工具栏：搜索独占整行，其余按钮均分 */
+    #stdm_toolbar { gap: 8px; padding: 12px 14px; }
+    #stdm_charpick { flex: 1 1 100%; max-width: none !important; }
+    #stdm_search { flex: 1 1 100%; padding: 11px 14px; font-size: 16px; }
+    #stdm_toolbar .stdm_btn {
+        flex: 1 1 auto;
+        padding: 10px 12px;
+        font-size: 0.86em;
+        text-align: center;
+    }
+    #stdm_delete { flex: 1 1 100% !important; order: 9; padding: 13px; font-size: 0.95em; }
+
+    /* 列表：更大的触摸行、常显操作按钮 */
+    #stdm_list { padding: 6px 10px 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+    .stdm_row {
+        gap: 10px;
+        padding: 12px 10px;
+        flex-wrap: wrap;
+    }
+    .stdm_name { font-size: 0.98em; flex: 1 1 auto; }
+    .stdm_meta { font-size: 0.72em; }
+    .stdm_rowactions {
+        opacity: 1;
+        gap: 6px;
+        flex: 1 1 100%;
+        margin-top: 4px;
+        padding-left: 32px;
+    }
+    .stdm_rowactions .stdm_btn {
+        flex: 1 1 auto;
+        padding: 8px 10px;
+        font-size: 0.82em;
+        text-align: center;
+    }
+
+    /* 编辑器全屏 */
+    #stdm_editor_overlay { padding: 0; }
+    #stdm_editor_box {
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        border: none;
+        padding: 14px;
+        padding-top: max(14px, env(safe-area-inset-top));
+        padding-bottom: max(14px, env(safe-area-inset-bottom));
+    }
+    #stdm_editor_text { font-size: 14px; }
+    #stdm_editor_box .stdm_btn { padding: 10px 16px; }
 }
