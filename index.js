@@ -4,7 +4,9 @@
  * 在一个面板里批量管理：预设 / 世界书 / 角色卡 / 聊天记录 / 主题美化。
  * 支持：搜索筛选、多选批量删除、重命名、JSON 内容编辑、删除前自动备份 + 一键撤销。
  *
- * 所有写操作都走 SillyTavern 官方后端 API，不直接碰文件系统，因此云端/服务器部署同样可用。
+ * 面板用 SillyTavern 内置 Popup 系统承载，因此在手机酒馆里能像原生弹窗一样全屏，
+ * 不受 position:fixed 被 transform 容器劫持的影响。
+ * 所有写操作走官方后端 API，不直接碰文件系统，云端/服务器部署同样可用。
  */
 
 const EXT_NAME = '数据管家';
@@ -69,7 +71,6 @@ function stamp() {
  *  数据适配层：每种数据一个 adapter
  * ------------------------------------------------------------------ */
 
-/** 预设按 API 分类。key 是后端 apiId。 */
 const PRESET_KINDS = [
     { apiId: 'openai', label: '聊天补全预设 (OpenAI/Claude 等)', namesKey: 'openai_setting_names', dataKey: 'openai_settings' },
     { apiId: 'textgenerationwebui', label: '文本补全预设 (TextGen)', namesKey: 'textgenerationwebui_preset_names', dataKey: 'textgenerationwebui_presets' },
@@ -90,7 +91,6 @@ async function getSettings(force = false) {
 }
 
 const adapters = {
-    /* ---------------- 预设 ---------------- */
     presets: {
         label: '预设',
         editable: true,
@@ -117,29 +117,18 @@ const adapters = {
             }
             return items;
         },
-        async read(item) {
-            return item.inline ?? {};
-        },
-        async write(item, data) {
-            await post('/api/presets/save', { name: item.name, apiId: item.apiId, preset: data });
-        },
-        async remove(item) {
-            await post('/api/presets/delete', { name: item.name, apiId: item.apiId });
-        },
+        async read(item) { return item.inline ?? {}; },
+        async write(item, data) { await post('/api/presets/save', { name: item.name, apiId: item.apiId, preset: data }); },
+        async remove(item) { await post('/api/presets/delete', { name: item.name, apiId: item.apiId }); },
         async rename(item, newName) {
             const data = await this.read(item);
             await post('/api/presets/save', { name: newName, apiId: item.apiId, preset: data });
             await post('/api/presets/delete', { name: item.name, apiId: item.apiId });
         },
-        async restore(backup) {
-            await post('/api/presets/save', { name: backup.name, apiId: backup.apiId, preset: backup.data });
-        },
-        backupOf(item, data) {
-            return { name: item.name, apiId: item.apiId, data };
-        },
+        async restore(backup) { await post('/api/presets/save', { name: backup.name, apiId: backup.apiId, preset: backup.data }); },
+        backupOf(item, data) { return { name: item.name, apiId: item.apiId, data }; },
     },
 
-    /* ---------------- 世界书 ---------------- */
     worlds: {
         label: '世界书',
         editable: true,
@@ -154,34 +143,22 @@ const adapters = {
                 meta: w.name && w.name !== w.file_id ? `内部名: ${w.name}` : '',
             }));
         },
-        async read(item) {
-            return await post('/api/worldinfo/get', { name: item.name });
-        },
-        async write(item, data) {
-            await post('/api/worldinfo/edit', { name: item.name, data });
-        },
-        async remove(item) {
-            await post('/api/worldinfo/delete', { name: item.name });
-        },
+        async read(item) { return await post('/api/worldinfo/get', { name: item.name }); },
+        async write(item, data) { await post('/api/worldinfo/edit', { name: item.name, data }); },
+        async remove(item) { await post('/api/worldinfo/delete', { name: item.name }); },
         async rename(item, newName) {
             const data = await this.read(item);
             await post('/api/worldinfo/edit', { name: newName, data });
             await post('/api/worldinfo/delete', { name: item.name });
         },
-        async restore(backup) {
-            await post('/api/worldinfo/edit', { name: backup.name, data: backup.data });
-        },
-        backupOf(item, data) {
-            return { name: item.name, data };
-        },
+        async restore(backup) { await post('/api/worldinfo/edit', { name: backup.name, data: backup.data }); },
+        backupOf(item, data) { return { name: item.name, data }; },
     },
 
-    /* ---------------- 角色卡 ---------------- */
     characters: {
         label: '角色卡',
         editable: false,
         renamable: false,
-        // 角色卡是 PNG，无法用 JSON 接口还原，因此删除前把卡直接下载到本地。
         downloadBackup: true,
         async load() {
             const all = await post('/api/characters/all', { shallow: true });
@@ -208,40 +185,30 @@ const adapters = {
             setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         },
         async remove(item, opts = {}) {
-            await post('/api/characters/delete', {
-                avatar_url: item.avatar,
-                delete_chats: !!opts.deleteChats,
-            });
+            await post('/api/characters/delete', { avatar_url: item.avatar, delete_chats: !!opts.deleteChats });
         },
     },
 
-    /* ---------------- 聊天记录 ---------------- */
     chats: {
         label: '聊天记录',
         editable: true,
         renamable: true,
         needsCharacter: true,
-        async load(state) {
-            if (!state.avatar) return [];
-            const list = await post('/api/chats/search', { avatar_url: state.avatar });
+        async load(st) {
+            if (!st.avatar) return [];
+            const list = await post('/api/chats/search', { avatar_url: st.avatar });
             const arr = Array.isArray(list) ? list : [];
             return arr.map(c => ({
-                id: `${state.avatar}::${c.file_name}`,
+                id: `${st.avatar}::${c.file_name}`,
                 name: c.file_name,
-                group: `聊天记录 — ${state.charName}`,
-                avatar: state.avatar,
+                group: `聊天记录 — ${st.charName}`,
+                avatar: st.avatar,
                 meta: `${c.message_count ?? '?'} 条 · ${c.file_size ?? ''}`,
             }));
         },
-        async read(item) {
-            return await post('/api/chats/get', { avatar_url: item.avatar, file_name: item.name });
-        },
-        async write(item, data) {
-            await post('/api/chats/save', { avatar_url: item.avatar, file_name: item.name, chat: data, force: true });
-        },
-        async remove(item) {
-            await post('/api/chats/delete', { avatar_url: item.avatar, chatfile: `${item.name}.jsonl` });
-        },
+        async read(item) { return await post('/api/chats/get', { avatar_url: item.avatar, file_name: item.name }); },
+        async write(item, data) { await post('/api/chats/save', { avatar_url: item.avatar, file_name: item.name, chat: data, force: true }); },
+        async remove(item) { await post('/api/chats/delete', { avatar_url: item.avatar, chatfile: `${item.name}.jsonl` }); },
         async rename(item, newName) {
             await post('/api/chats/rename', {
                 avatar_url: item.avatar,
@@ -249,20 +216,10 @@ const adapters = {
                 renamed_file: `${newName}.jsonl`,
             });
         },
-        async restore(backup) {
-            await post('/api/chats/save', {
-                avatar_url: backup.avatar,
-                file_name: backup.name,
-                chat: backup.data,
-                force: true,
-            });
-        },
-        backupOf(item, data) {
-            return { name: item.name, avatar: item.avatar, data };
-        },
+        async restore(backup) { await post('/api/chats/save', { avatar_url: backup.avatar, file_name: backup.name, chat: backup.data, force: true }); },
+        backupOf(item, data) { return { name: item.name, avatar: item.avatar, data }; },
     },
 
-    /* ---------------- 主题 / 美化方案 ---------------- */
     themes: {
         label: '主题美化',
         editable: true,
@@ -279,23 +236,15 @@ const adapters = {
             }));
         },
         async read(item) { return item.inline ?? { name: item.name }; },
-        async write(item, data) {
-            await post('/api/themes/save', { ...data, name: item.name });
-        },
-        async remove(item) {
-            await post('/api/themes/delete', { name: item.name });
-        },
+        async write(item, data) { await post('/api/themes/save', { ...data, name: item.name }); },
+        async remove(item) { await post('/api/themes/delete', { name: item.name }); },
         async rename(item, newName) {
             const data = await this.read(item);
             await post('/api/themes/save', { ...data, name: newName });
             await post('/api/themes/delete', { name: item.name });
         },
-        async restore(backup) {
-            await post('/api/themes/save', { ...backup.data, name: backup.name });
-        },
-        backupOf(item, data) {
-            return { name: item.name, data };
-        },
+        async restore(backup) { await post('/api/themes/save', { ...backup.data, name: backup.name }); },
+        backupOf(item, data) { return { name: item.name, data }; },
     },
 };
 
@@ -308,36 +257,37 @@ const state = {
     items: [],
     filter: '',
     selected: new Set(),
-    avatar: '',          // 聊天记录标签用：当前角色
+    avatar: '',
     charName: '',
     characters: [],
-    lastBatch: null,     // { tab, entries: [...] } 用于撤销
+    lastBatch: null,
     autoDownload: true,
 };
 
+let currentPopup = null;
+let rootEl = null;   // 当前面板根元素
+
+function $(sel) { return rootEl ? rootEl.querySelector(sel) : null; }
+
 /* ------------------------------------------------------------------ *
- *  UI
+ *  构建面板内容（不含浮层，交给酒馆 Popup 承载）
  * ------------------------------------------------------------------ */
 
-function buildModal() {
-    if (document.getElementById('stdm_overlay')) return;
-
-    const overlay = document.createElement('div');
-    overlay.id = 'stdm_overlay';
-    overlay.hidden = true;
-    overlay.innerHTML = `
-    <div id="stdm_modal">
+function buildContent() {
+    const root = document.createElement('div');
+    root.id = 'stdm_modal';
+    root.className = 'stdm-root';
+    root.innerHTML = `
         <div id="stdm_header">
             <span class="stdm_title">🗂️ ${EXT_NAME}</span>
-            <label class="stdm_flexrow" style="font-size:.82em;opacity:.85;gap:4px;">
-                <input type="checkbox" id="stdm_autodl" checked> 删除时下载备份文件
+            <label class="stdm_flexrow">
+                <input type="checkbox" id="stdm_autodl" checked> 删除时下载备份
             </label>
             <button class="stdm_btn" id="stdm_undo" disabled>↩ 撤销上次删除</button>
-            <button class="stdm_btn" id="stdm_close">✕</button>
         </div>
         <div id="stdm_tabs"></div>
         <div id="stdm_toolbar">
-            <select id="stdm_charpick" style="display:none;max-width:220px;"></select>
+            <select id="stdm_charpick" style="display:none;"></select>
             <input type="text" id="stdm_search" placeholder="搜索名称…">
             <button class="stdm_btn" id="stdm_selall">全选</button>
             <button class="stdm_btn" id="stdm_selnone">清空</button>
@@ -346,28 +296,11 @@ function buildModal() {
             <button class="stdm_btn stdm_danger" id="stdm_delete">删除选中 (0)</button>
         </div>
         <div id="stdm_list"></div>
-        <div id="stdm_status"></div>
-    </div>`;
-    document.body.appendChild(overlay);
+        <div id="stdm_status"></div>`;
 
-    const editor = document.createElement('div');
-    editor.id = 'stdm_editor_overlay';
-    editor.hidden = true;
-    editor.innerHTML = `
-    <div id="stdm_editor_box">
-        <div class="stdm_flexrow">
-            <strong id="stdm_editor_title">编辑</strong>
-            <span class="stdm_spacer"></span>
-            <button class="stdm_btn" id="stdm_editor_save">保存</button>
-            <button class="stdm_btn" id="stdm_editor_cancel">取消</button>
-        </div>
-        <textarea id="stdm_editor_text" spellcheck="false"></textarea>
-        <div style="font-size:.78em;opacity:.65;">直接编辑 JSON。保存前会校验格式；格式错误不会写入。</div>
-    </div>`;
-    document.body.appendChild(editor);
+    rootEl = root;
 
-    // 标签
-    const tabsEl = overlay.querySelector('#stdm_tabs');
+    const tabsEl = root.querySelector('#stdm_tabs');
     for (const [key, ad] of Object.entries(adapters)) {
         const b = document.createElement('div');
         b.className = 'stdm_tab';
@@ -377,44 +310,34 @@ function buildModal() {
         tabsEl.appendChild(b);
     }
 
-    overlay.querySelector('#stdm_close').addEventListener('click', closeModal);
-    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeModal(); });
-    overlay.querySelector('#stdm_search').addEventListener('input', (e) => {
+    root.querySelector('#stdm_search').addEventListener('input', (e) => {
         state.filter = e.target.value.trim().toLowerCase();
         renderList();
     });
-    overlay.querySelector('#stdm_selall').addEventListener('click', () => {
+    root.querySelector('#stdm_selall').addEventListener('click', () => {
         visibleItems().forEach(i => state.selected.add(i.id));
         renderList();
     });
-    overlay.querySelector('#stdm_selnone').addEventListener('click', () => {
+    root.querySelector('#stdm_selnone').addEventListener('click', () => {
         state.selected.clear();
         renderList();
     });
-    overlay.querySelector('#stdm_refresh').addEventListener('click', () => reload());
-    overlay.querySelector('#stdm_delete').addEventListener('click', deleteSelected);
-    overlay.querySelector('#stdm_undo').addEventListener('click', undoLast);
-    overlay.querySelector('#stdm_autodl').addEventListener('change', (e) => {
-        state.autoDownload = e.target.checked;
-    });
-    overlay.querySelector('#stdm_charpick').addEventListener('change', (e) => {
+    root.querySelector('#stdm_refresh').addEventListener('click', () => reload());
+    root.querySelector('#stdm_delete').addEventListener('click', deleteSelected);
+    root.querySelector('#stdm_undo').addEventListener('click', undoLast);
+    root.querySelector('#stdm_autodl').addEventListener('change', (e) => { state.autoDownload = e.target.checked; });
+    root.querySelector('#stdm_charpick').addEventListener('change', (e) => {
         const opt = e.target.selectedOptions[0];
         state.avatar = e.target.value;
         state.charName = opt ? opt.textContent : '';
         reload();
     });
 
-    editor.querySelector('#stdm_editor_cancel').addEventListener('click', () => { editor.hidden = true; });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        if (!editor.hidden) { editor.hidden = true; return; }
-        if (!overlay.hidden) closeModal();
-    });
+    return root;
 }
 
 function setStatus(msg) {
-    const el = document.getElementById('stdm_status');
+    const el = $('#stdm_status');
     if (el) el.textContent = msg;
 }
 
@@ -426,7 +349,7 @@ function visibleItems() {
 }
 
 function updateDeleteButton() {
-    const btn = document.getElementById('stdm_delete');
+    const btn = $('#stdm_delete');
     if (!btn) return;
     const n = state.selected.size;
     btn.textContent = `删除选中 (${n})`;
@@ -434,7 +357,7 @@ function updateDeleteButton() {
 }
 
 function renderList() {
-    const list = document.getElementById('stdm_list');
+    const list = $('#stdm_list');
     if (!list) return;
     list.innerHTML = '';
 
@@ -532,7 +455,7 @@ function renderList() {
 }
 
 async function populateCharacterPicker() {
-    const pick = document.getElementById('stdm_charpick');
+    const pick = $('#stdm_charpick');
     if (!pick) return;
     const all = await post('/api/characters/all', { shallow: true });
     state.characters = Array.isArray(all) ? all : [];
@@ -553,12 +476,14 @@ async function populateCharacterPicker() {
 async function switchTab(key) {
     state.tab = key;
     state.selected.clear();
-    document.querySelectorAll('.stdm_tab').forEach(t => {
-        t.classList.toggle('stdm_active', t.dataset.tab === key);
-    });
-    const pick = document.getElementById('stdm_charpick');
+    if (rootEl) {
+        rootEl.querySelectorAll('.stdm_tab').forEach(t => {
+            t.classList.toggle('stdm_active', t.dataset.tab === key);
+        });
+    }
+    const pick = $('#stdm_charpick');
     const needsChar = !!adapters[key].needsCharacter;
-    pick.style.display = needsChar ? '' : 'none';
+    if (pick) pick.style.display = needsChar ? '' : 'none';
     if (needsChar) {
         setStatus('正在读取角色列表…');
         await populateCharacterPicker();
@@ -619,42 +544,56 @@ async function renameItem(item) {
 
 async function editItem(item) {
     const ad = adapters[state.tab];
-    const box = document.getElementById('stdm_editor_overlay');
-    const text = document.getElementById('stdm_editor_text');
-    const title = document.getElementById('stdm_editor_title');
-    const saveBtn = document.getElementById('stdm_editor_save');
-
+    const c = ctx();
+    let data;
     try {
-        const data = await ad.read(item);
-        title.textContent = `编辑：${item.name}`;
-        text.value = JSON.stringify(data, null, 2);
-        box.hidden = false;
-
-        const onSave = async () => {
-            let parsed;
-            try {
-                parsed = JSON.parse(text.value);
-            } catch (e) {
-                toast(`JSON 格式错误：${e.message}`, 'error');
-                return;
-            }
-            try {
-                await ad.write(item, parsed);
-                toast('已保存', 'success');
-                box.hidden = true;
-                saveBtn.removeEventListener('click', onSave);
-                await reload();
-            } catch (err) {
-                toast(`保存失败：${err.message}`, 'error');
-            }
-        };
-        // 先清掉旧监听，避免重复绑定
-        const fresh = saveBtn.cloneNode(true);
-        saveBtn.replaceWith(fresh);
-        fresh.addEventListener('click', onSave);
+        data = await ad.read(item);
     } catch (err) {
         toast(`读取失败：${err.message}`, 'error');
+        return;
     }
+
+    const box = document.createElement('div');
+    box.className = 'stdm-editor-wrap';
+    const ta = document.createElement('textarea');
+    ta.className = 'stdm_editor_text';
+    ta.spellcheck = false;
+    ta.value = JSON.stringify(data, null, 2);
+    box.appendChild(ta);
+    const hint = document.createElement('div');
+    hint.className = 'stdm_editor_hint';
+    hint.textContent = '直接编辑 JSON，保存前会校验格式；格式错误不会写入。';
+    box.appendChild(hint);
+
+    // 优先用酒馆 Popup（移动端全屏），拿不到就退回原生 confirm 流程
+    if (c.Popup && c.POPUP_TYPE) {
+        const p = new c.Popup(box, c.POPUP_TYPE.CONFIRM, '', {
+            okButton: '保存', cancelButton: '取消', wide: true, large: true, allowVerticalScrolling: false,
+        });
+        const result = await p.show();
+        const affirmative = c.POPUP_RESULT ? c.POPUP_RESULT.AFFIRMATIVE : 1;
+        if (result !== affirmative) return;
+        let parsed;
+        try { parsed = JSON.parse(ta.value); }
+        catch (e) { toast(`JSON 格式错误：${e.message}`, 'error'); return; }
+        try {
+            await ad.write(item, parsed);
+            toast('已保存', 'success');
+            await reload();
+        } catch (err) {
+            toast(`保存失败：${err.message}`, 'error');
+        }
+        return;
+    }
+
+    // 退回方案
+    const edited = prompt('编辑 JSON：', ta.value);
+    if (edited == null) return;
+    let parsed;
+    try { parsed = JSON.parse(edited); }
+    catch (e) { toast(`JSON 格式错误：${e.message}`, 'error'); return; }
+    try { await ad.write(item, parsed); toast('已保存', 'success'); await reload(); }
+    catch (err) { toast(`保存失败：${err.message}`, 'error'); }
 }
 
 async function deleteSelected() {
@@ -697,9 +636,11 @@ async function deleteSelected() {
 
     if (entries.length) {
         state.lastBatch = { tab: state.tab, entries };
-        const undo = document.getElementById('stdm_undo');
-        undo.disabled = false;
-        undo.textContent = `↩ 撤销上次删除 (${entries.length})`;
+        const undo = $('#stdm_undo');
+        if (undo) {
+            undo.disabled = false;
+            undo.textContent = `↩ 撤销上次删除 (${entries.length})`;
+        }
         if (state.autoDownload) {
             download(`备份_${adapters[state.tab].label}_${stamp()}.json`,
                 JSON.stringify({ tab: state.tab, time: new Date().toISOString(), entries }, null, 2));
@@ -726,26 +667,44 @@ async function undoLast() {
         try { await ad.restore(entry); ok++; } catch (e) { console.error(e); fail++; }
     }
     state.lastBatch = null;
-    const undo = document.getElementById('stdm_undo');
-    undo.disabled = true;
-    undo.textContent = '↩ 撤销上次删除';
+    const undo = $('#stdm_undo');
+    if (undo) {
+        undo.disabled = true;
+        undo.textContent = '↩ 撤销上次删除';
+    }
     toast(`还原完成：成功 ${ok} 项${fail ? `，失败 ${fail} 项` : ''}`, fail ? 'warning' : 'success');
     if (state.tab === tab) await reload();
 }
 
 /* ------------------------------------------------------------------ *
- *  开关
+ *  打开面板 —— 用酒馆 Popup 承载（手机端全屏）
  * ------------------------------------------------------------------ */
 
 async function openModal() {
-    buildModal();
-    document.getElementById('stdm_overlay').hidden = false;
-    await switchTab(state.tab);
-}
+    const c = ctx();
+    const content = buildContent();
 
-function closeModal() {
-    const el = document.getElementById('stdm_overlay');
-    if (el) el.hidden = true;
+    if (c.Popup && c.POPUP_TYPE) {
+        currentPopup = new c.Popup(content, c.POPUP_TYPE.TEXT, '', {
+            okButton: '关闭',
+            wide: true,
+            large: true,
+            allowVerticalScrolling: false,
+            onClose: () => { rootEl = null; currentPopup = null; },
+        });
+        currentPopup.show();
+        // 让 Popup 外层容器带上我们的标记，方便 CSS 精确控制尺寸
+        try {
+            const dlg = currentPopup.dlg || currentPopup.popup;
+            if (dlg && dlg.classList) dlg.classList.add('stdm-popup');
+        } catch { /* 忽略 */ }
+        await switchTab(state.tab);
+    } else {
+        // 极旧版本回退：直接挂到 body（可能不全屏，但至少能用）
+        content.classList.add('stdm-fallback');
+        document.body.appendChild(content);
+        await switchTab(state.tab);
+    }
 }
 
 /* ------------------------------------------------------------------ *
@@ -753,7 +712,6 @@ function closeModal() {
  * ------------------------------------------------------------------ */
 
 function mount() {
-    // 1) 魔棒菜单入口
     const menu = document.getElementById('extensionsMenu');
     if (menu && !document.getElementById('stdm_menu_entry')) {
         const entry = document.createElement('div');
@@ -765,7 +723,6 @@ function mount() {
         menu.appendChild(entry);
     }
 
-    // 2) 扩展设置面板入口
     const settings = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
     if (settings && !document.getElementById('stdm_settings_block')) {
         const block = document.createElement('div');
@@ -787,7 +744,6 @@ function mount() {
     }
 }
 
-/* 斜杠命令：/datamanager */
 function registerSlashCommand() {
     try {
         const c = ctx();
@@ -809,7 +765,6 @@ function registerSlashCommand() {
     const start = () => {
         mount();
         registerSlashCommand();
-        // 菜单可能延迟渲染，补挂一次
         setTimeout(mount, 3000);
         console.log('[数据管家] 已加载');
     };
