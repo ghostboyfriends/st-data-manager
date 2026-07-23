@@ -2,16 +2,15 @@
  * 数据管家 (Data Manager) — SillyTavern 第三方 UI 扩展
  *
  * 在一个面板里批量管理：预设 / 世界书 / 角色卡 / 聊天记录 / 主题美化。
- * 支持：搜索筛选、多选批量删除、重命名、JSON 内容编辑、删除前自动备份 + 一键撤销。
+ * 功能：搜索筛选、多选批量删除、重命名、JSON 内容编辑、删除前自动备份、
+ *       一键撤销，以及持久化的「删除历史」（存 IndexedDB，可随时下载/还原）。
  *
- * 面板用 SillyTavern 内置 Popup 系统承载，因此在手机酒馆里能像原生弹窗一样全屏，
- * 不受 position:fixed 被 transform 容器劫持的影响。
- * 所有写操作走官方后端 API，不直接碰文件系统，云端/服务器部署同样可用。
+ * 面板用 SillyTavern 内置 Popup 系统承载，手机酒馆里能像原生弹窗一样全屏。
+ * 所有读写走官方后端 API，不直接碰文件系统，云端/服务器部署同样可用。
  */
 
 const EXT_NAME = '数据管家';
 
-/** @returns {any} SillyTavern 上下文 */
 function ctx() {
     // eslint-disable-next-line no-undef
     return SillyTavern.getContext();
@@ -20,22 +19,21 @@ function ctx() {
 function headers() {
     try {
         const c = ctx();
-        if (typeof c.getRequestHeaders === 'function') {
-            return c.getRequestHeaders();
-        }
+        if (typeof c.getRequestHeaders === 'function') return c.getRequestHeaders();
     } catch { /* 忽略 */ }
     return { 'Content-Type': 'application/json' };
 }
 
+function multipartHeaders() {
+    const h = { ...headers() };
+    delete h['Content-Type'];
+    delete h['content-type'];
+    return h;
+}
+
 async function post(url, body) {
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(body ?? {}),
-    });
-    if (!res.ok) {
-        throw new Error(`${url} 返回 ${res.status}`);
-    }
+    const res = await fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body ?? {}) });
+    if (!res.ok) throw new Error(`${url} 返回 ${res.status}`);
     const text = await res.text();
     if (!text) return null;
     try { return JSON.parse(text); } catch { return text; }
@@ -50,15 +48,36 @@ function toast(msg, type = 'info') {
     }
 }
 
-function download(filename, text) {
-    const blob = new Blob([text], { type: 'application/json' });
+function downloadText(filename, text) {
+    downloadBlob(filename, new Blob([text], { type: 'application/json' }));
+}
+
+function downloadBlob(filename, blob) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+}
+
+function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+    });
+}
+
+function dataURLToBlob(dataURL) {
+    const [meta, b64] = String(dataURL).split(',');
+    const mime = (meta.match(/:(.*?);/) || [])[1] || 'application/octet-stream';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
 }
 
 function stamp() {
@@ -67,8 +86,97 @@ function stamp() {
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+function fmtTime(v) {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /* ------------------------------------------------------------------ *
- *  数据适配层：每种数据一个 adapter
+ *  IndexedDB —— 持久化删除历史（含完整备份内容）
+ * ------------------------------------------------------------------ */
+
+const DB_NAME = 'stdm_data_manager';
+const DB_STORE = 'history';
+const HISTORY_MAX = 60;
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: 'id' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function dbPut(rec) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(rec);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+async function dbGetAll() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const r = tx.objectStore(DB_STORE).getAll();
+        r.onsuccess = () => resolve(r.result || []);
+        r.onerror = () => reject(r.error);
+    });
+}
+
+async function dbDelete(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+async function dbClear() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+async function saveHistory(tab, entries) {
+    const rec = {
+        id: Date.now(),
+        time: new Date().toISOString(),
+        tab,
+        label: adapters[tab].label,
+        count: entries.length,
+        names: entries.map(e => e.name),
+        entries,
+    };
+    try {
+        await dbPut(rec);
+        const all = await dbGetAll();
+        if (all.length > HISTORY_MAX) {
+            all.sort((a, b) => a.id - b.id);
+            for (const r of all.slice(0, all.length - HISTORY_MAX)) await dbDelete(r.id);
+        }
+    } catch (e) {
+        console.warn('[数据管家] 写入历史失败', e);
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ *  数据适配层
  * ------------------------------------------------------------------ */
 
 const PRESET_KINDS = [
@@ -84,9 +192,7 @@ const PRESET_KINDS = [
 
 let settingsCache = null;
 async function getSettings(force = false) {
-    if (!settingsCache || force) {
-        settingsCache = await post('/api/settings/get', {});
-    }
+    if (!settingsCache || force) settingsCache = await post('/api/settings/get', {});
     return settingsCache;
 }
 
@@ -159,7 +265,7 @@ const adapters = {
         label: '角色卡',
         editable: false,
         renamable: false,
-        downloadBackup: true,
+        isCharacter: true,
         async load() {
             const all = await post('/api/characters/all', { shallow: true });
             const arr = Array.isArray(all) ? all : [];
@@ -172,17 +278,31 @@ const adapters = {
                 thumb: `/thumbnail?type=avatar&file=${encodeURIComponent(c.avatar)}`,
             }));
         },
-        async backupToDisk(item) {
-            const res = await fetch(`/characters/${encodeURIComponent(item.avatar)}`);
-            if (!res.ok) throw new Error('无法读取角色卡文件');
-            const blob = await res.blob();
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = item.avatar;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        async fetchCardBlob(item) {
+            const res = await fetch('/api/characters/export', {
+                method: 'POST',
+                headers: headers(),
+                body: JSON.stringify({ format: 'png', avatar_url: item.avatar }),
+            });
+            if (!res.ok) throw new Error(`导出接口返回 ${res.status}`);
+            return await res.blob();
+        },
+        async read(item) {
+            const blob = await this.fetchCardBlob(item);
+            return { png: await blobToDataURL(blob) };
+        },
+        async exportBlob(item) {
+            const blob = await this.fetchCardBlob(item);
+            return { blob, filename: item.avatar };
+        },
+        backupOf(item, data) { return { name: item.name, avatar: item.avatar, png: data.png }; },
+        async restore(backup) {
+            const blob = dataURLToBlob(backup.png);
+            const fd = new FormData();
+            fd.append('avatar', blob, backup.avatar || `${backup.name || 'character'}.png`);
+            fd.append('file_type', 'png');
+            const res = await fetch('/api/characters/import', { method: 'POST', headers: multipartHeaders(), body: fd });
+            if (!res.ok) throw new Error(`导入返回 ${res.status}`);
         },
         async remove(item, opts = {}) {
             await post('/api/characters/delete', { avatar_url: item.avatar, delete_chats: !!opts.deleteChats });
@@ -210,11 +330,7 @@ const adapters = {
         async write(item, data) { await post('/api/chats/save', { avatar_url: item.avatar, file_name: item.name, chat: data, force: true }); },
         async remove(item) { await post('/api/chats/delete', { avatar_url: item.avatar, chatfile: `${item.name}.jsonl` }); },
         async rename(item, newName) {
-            await post('/api/chats/rename', {
-                avatar_url: item.avatar,
-                original_file: `${item.name}.jsonl`,
-                renamed_file: `${newName}.jsonl`,
-            });
+            await post('/api/chats/rename', { avatar_url: item.avatar, original_file: `${item.name}.jsonl`, renamed_file: `${newName}.jsonl` });
         },
         async restore(backup) { await post('/api/chats/save', { avatar_url: backup.avatar, file_name: backup.name, chat: backup.data, force: true }); },
         backupOf(item, data) { return { name: item.name, avatar: item.avatar, data }; },
@@ -265,12 +381,12 @@ const state = {
 };
 
 let currentPopup = null;
-let rootEl = null;   // 当前面板根元素
+let rootEl = null;
 
 function $(sel) { return rootEl ? rootEl.querySelector(sel) : null; }
 
 /* ------------------------------------------------------------------ *
- *  构建面板内容（不含浮层，交给酒馆 Popup 承载）
+ *  构建面板内容
  * ------------------------------------------------------------------ */
 
 function buildContent() {
@@ -283,6 +399,7 @@ function buildContent() {
             <label class="stdm_flexrow">
                 <input type="checkbox" id="stdm_autodl" checked> 删除时下载备份
             </label>
+            <button class="stdm_btn" id="stdm_history">🕘 历史</button>
             <button class="stdm_btn" id="stdm_undo" disabled>↩ 撤销上次删除</button>
         </div>
         <div id="stdm_tabs"></div>
@@ -324,6 +441,7 @@ function buildContent() {
     });
     root.querySelector('#stdm_refresh').addEventListener('click', () => reload());
     root.querySelector('#stdm_delete').addEventListener('click', deleteSelected);
+    root.querySelector('#stdm_history').addEventListener('click', openHistory);
     root.querySelector('#stdm_undo').addEventListener('click', undoLast);
     root.querySelector('#stdm_autodl').addEventListener('change', (e) => { state.autoDownload = e.target.checked; });
     root.querySelector('#stdm_charpick').addEventListener('change', (e) => {
@@ -511,11 +629,12 @@ async function reload() {
 async function exportItem(item) {
     const ad = adapters[state.tab];
     try {
-        if (ad.downloadBackup) {
-            await ad.backupToDisk(item);
+        if (typeof ad.exportBlob === 'function') {
+            const { blob, filename } = await ad.exportBlob(item);
+            downloadBlob(filename, blob);
         } else {
             const data = await ad.read(item);
-            download(`${item.name}.json`, JSON.stringify(data, null, 2));
+            downloadText(`${item.name}.json`, JSON.stringify(data, null, 2));
         }
         toast(`已导出 ${item.name}`, 'success');
     } catch (err) {
@@ -546,15 +665,11 @@ async function editItem(item) {
     const ad = adapters[state.tab];
     const c = ctx();
     let data;
-    try {
-        data = await ad.read(item);
-    } catch (err) {
-        toast(`读取失败：${err.message}`, 'error');
-        return;
-    }
+    try { data = await ad.read(item); }
+    catch (err) { toast(`读取失败：${err.message}`, 'error'); return; }
 
     const box = document.createElement('div');
-    box.className = 'stdm-editor-wrap';
+    box.className = 'stdm-root stdm-editor-wrap';
     const ta = document.createElement('textarea');
     ta.className = 'stdm_editor_text';
     ta.spellcheck = false;
@@ -565,7 +680,6 @@ async function editItem(item) {
     hint.textContent = '直接编辑 JSON，保存前会校验格式；格式错误不会写入。';
     box.appendChild(hint);
 
-    // 优先用酒馆 Popup（移动端全屏），拿不到就退回原生 confirm 流程
     if (c.Popup && c.POPUP_TYPE) {
         const p = new c.Popup(box, c.POPUP_TYPE.CONFIRM, '', {
             okButton: '保存', cancelButton: '取消', wide: true, large: true, allowVerticalScrolling: false,
@@ -576,17 +690,11 @@ async function editItem(item) {
         let parsed;
         try { parsed = JSON.parse(ta.value); }
         catch (e) { toast(`JSON 格式错误：${e.message}`, 'error'); return; }
-        try {
-            await ad.write(item, parsed);
-            toast('已保存', 'success');
-            await reload();
-        } catch (err) {
-            toast(`保存失败：${err.message}`, 'error');
-        }
+        try { await ad.write(item, parsed); toast('已保存', 'success'); await reload(); }
+        catch (err) { toast(`保存失败：${err.message}`, 'error'); }
         return;
     }
 
-    // 退回方案
     const edited = prompt('编辑 JSON：', ta.value);
     if (edited == null) return;
     let parsed;
@@ -594,6 +702,48 @@ async function editItem(item) {
     catch (e) { toast(`JSON 格式错误：${e.message}`, 'error'); return; }
     try { await ad.write(item, parsed); toast('已保存', 'success'); await reload(); }
     catch (err) { toast(`保存失败：${err.message}`, 'error'); }
+}
+
+/** 把一批备份打包成单个文件下载（避免浏览器多文件下载拦截） */
+async function downloadArchive(tab, entries) {
+    const label = adapters[tab] ? adapters[tab].label : tab;
+
+    if (tab === 'characters') {
+        const JSZipRef = (typeof window !== 'undefined' && window.JSZip) || ctx()?.JSZip || null;
+        if (JSZipRef) {
+            try {
+                const zip = new JSZipRef();
+                entries.forEach((e, i) => {
+                    const fname = e.avatar || `${e.name || 'character'}_${i}.png`;
+                    zip.file(fname, dataURLToBlob(e.png));
+                });
+                const blob = await zip.generateAsync({ type: 'blob' });
+                downloadBlob(`备份_角色卡_${stamp()}.zip`, blob);
+                return;
+            } catch (err) {
+                console.warn('[数据管家] zip 打包失败，改用 JSON 备份', err);
+            }
+        }
+        downloadText(`备份_角色卡_${stamp()}.json`, JSON.stringify({ tab, time: new Date().toISOString(), entries }, null, 2));
+        return;
+    }
+
+    downloadText(`备份_${label}_${stamp()}.json`, JSON.stringify({ tab, time: new Date().toISOString(), entries }, null, 2));
+}
+
+/** 还原一批备份 */
+async function restoreEntries(tab, entries) {
+    const ad = adapters[tab];
+    if (!ad || typeof ad.restore !== 'function') {
+        toast('该类型不支持自动还原，请手动导入备份文件', 'warning');
+        return;
+    }
+    let ok = 0, fail = 0;
+    for (const entry of entries) {
+        try { await ad.restore(entry); ok++; } catch (e) { console.error(e); fail++; }
+    }
+    toast(`还原完成：成功 ${ok} 项${fail ? `，失败 ${fail} 项` : ''}`, fail ? 'warning' : 'success');
+    if (state.tab === tab) await reload();
 }
 
 async function deleteSelected() {
@@ -605,24 +755,34 @@ async function deleteSelected() {
     const more = targets.length > 8 ? `\n…以及另外 ${targets.length - 8} 项` : '';
     let deleteChats = false;
 
-    if (state.tab === 'characters') {
-        if (!confirm(`确定删除 ${targets.length} 个角色卡？\n\n${names}${more}\n\n删除前会把卡片下载到本地作为备份。`)) return;
+    if (ad.isCharacter) {
+        const backupNote = state.autoDownload
+            ? '删除前会把这些卡打包成一个备份文件下载到本地，并写入「历史」，可随时还原。'
+            : '你已关闭「删除时下载备份」，不会保存备份文件；但仍会写入「历史」，之后可从历史里下载或还原。';
+        if (!confirm(`确定删除 ${targets.length} 个角色卡？\n\n${names}${more}\n\n${backupNote}`)) return;
         deleteChats = confirm('同时删除这些角色的聊天记录吗？\n\n确定 = 一并删除；取消 = 保留聊天记录。');
     } else {
-        if (!confirm(`确定删除 ${targets.length} 项？\n\n${names}${more}\n\n删除前会自动备份，可用「撤销上次删除」还原。`)) return;
+        if (!confirm(`确定删除 ${targets.length} 项？\n\n${names}${more}\n\n删除前会自动备份到「历史」，可随时下载或还原。`)) return;
     }
 
+    const canBackup = typeof ad.read === 'function' && typeof ad.backupOf === 'function';
     const entries = [];
-    let ok = 0, fail = 0;
+    let ok = 0, fail = 0, skipped = 0;
 
     for (let n = 0; n < targets.length; n++) {
         const item = targets[n];
         setStatus(`正在处理 ${n + 1}/${targets.length}：${item.name}`);
         try {
-            if (ad.downloadBackup) {
-                try { await ad.backupToDisk(item); } catch (e) { console.warn('备份失败', item.name, e); }
-            } else {
-                const data = await ad.read(item);
+            if (canBackup) {
+                let data;
+                try {
+                    data = await ad.read(item);
+                } catch (e) {
+                    console.error('备份失败，跳过删除', item.name, e);
+                    skipped++;
+                    toast(`「${item.name}」备份失败，已跳过删除`, 'warning');
+                    continue;
+                }
                 entries.push(ad.backupOf(item, data));
             }
             await ad.remove(item, { deleteChats });
@@ -641,43 +801,167 @@ async function deleteSelected() {
             undo.disabled = false;
             undo.textContent = `↩ 撤销上次删除 (${entries.length})`;
         }
+        await saveHistory(state.tab, entries);
         if (state.autoDownload) {
-            download(`备份_${adapters[state.tab].label}_${stamp()}.json`,
-                JSON.stringify({ tab: state.tab, time: new Date().toISOString(), entries }, null, 2));
+            try { await downloadArchive(state.tab, entries); }
+            catch (e) { console.warn('备份文件下载失败', e); toast('备份文件下载失败，但已存入历史，可从历史下载', 'warning'); }
         }
     }
 
-    setStatus(`完成：成功 ${ok} 项${fail ? `，失败 ${fail} 项` : ''}`);
-    toast(`删除完成：成功 ${ok} 项${fail ? `，失败 ${fail} 项` : ''}`, fail ? 'warning' : 'success');
+    const parts = [`成功 ${ok} 项`];
+    if (skipped) parts.push(`跳过 ${skipped} 项(备份失败)`);
+    if (fail) parts.push(`失败 ${fail} 项`);
+    const summary = parts.join('，');
+    setStatus(`完成：${summary}`);
+    toast(`删除完成：${summary}`, (fail || skipped) ? 'warning' : 'success');
     await reload();
 }
 
 async function undoLast() {
-    if (!state.lastBatch) return;
+    if (!state.lastBatch) { toast('没有可撤销的删除', 'info'); return; }
     const { tab, entries } = state.lastBatch;
-    const ad = adapters[tab];
-    if (typeof ad.restore !== 'function') {
-        toast('该类型不支持自动还原，请手动导入备份文件', 'warning');
-        return;
-    }
-    if (!confirm(`还原 ${entries.length} 项到「${ad.label}」？`)) return;
-
-    let ok = 0, fail = 0;
-    for (const entry of entries) {
-        try { await ad.restore(entry); ok++; } catch (e) { console.error(e); fail++; }
-    }
+    if (!confirm(`还原 ${entries.length} 项到「${adapters[tab].label}」？`)) return;
+    await restoreEntries(tab, entries);
     state.lastBatch = null;
     const undo = $('#stdm_undo');
-    if (undo) {
-        undo.disabled = true;
-        undo.textContent = '↩ 撤销上次删除';
-    }
-    toast(`还原完成：成功 ${ok} 项${fail ? `，失败 ${fail} 项` : ''}`, fail ? 'warning' : 'success');
-    if (state.tab === tab) await reload();
+    if (undo) { undo.disabled = true; undo.textContent = '↩ 撤销上次删除'; }
 }
 
 /* ------------------------------------------------------------------ *
- *  打开面板 —— 用酒馆 Popup 承载（手机端全屏）
+ *  删除历史面板
+ * ------------------------------------------------------------------ */
+
+async function renderHistory(container) {
+    const listEl = container.querySelector('.stdm-hist-list');
+    if (!listEl) return;
+    listEl.textContent = '加载中…';
+
+    let all;
+    try { all = await dbGetAll(); }
+    catch (e) { listEl.textContent = '读取历史失败：' + e.message; return; }
+
+    all.sort((a, b) => b.id - a.id);
+    listEl.innerHTML = '';
+
+    if (!all.length) {
+        const empty = document.createElement('div');
+        empty.className = 'stdm-empty';
+        empty.textContent = '暂无删除历史';
+        listEl.appendChild(empty);
+        return;
+    }
+
+    for (const rec of all) {
+        const row = document.createElement('div');
+        row.className = 'stdm-hist-row';
+
+        const info = document.createElement('div');
+        info.className = 'stdm-hist-info';
+
+        const top = document.createElement('div');
+        top.className = 'stdm-hist-top';
+        const badge = document.createElement('span');
+        badge.className = 'stdm-badge';
+        badge.textContent = rec.label;
+        const count = document.createElement('span');
+        count.className = 'stdm-hist-count';
+        count.textContent = `${rec.count} 项`;
+        const time = document.createElement('span');
+        time.className = 'stdm-hist-time';
+        time.textContent = fmtTime(rec.time || rec.id);
+        top.append(badge, count, time);
+
+        const nm = document.createElement('div');
+        nm.className = 'stdm-hist-names';
+        const namesArr = Array.isArray(rec.names) ? rec.names : [];
+        nm.textContent = namesArr.slice(0, 5).join('、') + (namesArr.length > 5 ? ` …等 ${namesArr.length} 项` : '');
+        nm.title = namesArr.join('\n');
+
+        info.append(top, nm);
+        row.appendChild(info);
+
+        const acts = document.createElement('div');
+        acts.className = 'stdm-hist-actions';
+
+        const dl = document.createElement('button');
+        dl.className = 'stdm_btn';
+        dl.textContent = '下载备份';
+        dl.addEventListener('click', async () => {
+            try { await downloadArchive(rec.tab, rec.entries); toast('已下载备份', 'success'); }
+            catch (e) { toast('下载失败：' + e.message, 'error'); }
+        });
+
+        const rs = document.createElement('button');
+        rs.className = 'stdm_btn';
+        rs.textContent = '还原';
+        rs.addEventListener('click', async () => {
+            if (!confirm(`把这 ${rec.count} 项还原到「${rec.label}」？`)) return;
+            await restoreEntries(rec.tab, rec.entries);
+        });
+
+        const rm = document.createElement('button');
+        rm.className = 'stdm_btn stdm_danger';
+        rm.textContent = '删除记录';
+        rm.addEventListener('click', async () => {
+            if (!confirm('删除这条历史记录？其中的备份内容会一并移除，不可恢复。')) return;
+            try { await dbDelete(rec.id); await renderHistory(container); }
+            catch (e) { toast('删除失败：' + e.message, 'error'); }
+        });
+
+        acts.append(dl, rs, rm);
+        row.appendChild(acts);
+        listEl.appendChild(row);
+    }
+}
+
+async function openHistory() {
+    const c = ctx();
+    const box = document.createElement('div');
+    box.className = 'stdm-root stdm-history';
+
+    const head = document.createElement('div');
+    head.className = 'stdm-hist-head';
+    const title = document.createElement('span');
+    title.className = 'stdm-hist-title';
+    title.textContent = '🕘 删除历史';
+    const clear = document.createElement('button');
+    clear.className = 'stdm_btn stdm_danger';
+    clear.textContent = '清空全部';
+    clear.addEventListener('click', async () => {
+        if (!confirm('清空全部删除历史？所有备份内容将一并移除，不可恢复。')) return;
+        try { await dbClear(); await renderHistory(box); toast('已清空历史', 'success'); }
+        catch (e) { toast('清空失败：' + e.message, 'error'); }
+    });
+    head.append(title, clear);
+
+    const list = document.createElement('div');
+    list.className = 'stdm-hist-list';
+
+    const foot = document.createElement('div');
+    foot.className = 'stdm-hist-foot';
+    foot.textContent = '历史与备份保存在本浏览器（IndexedDB），换设备或清理浏览器数据会丢失。';
+
+    box.append(head, list, foot);
+
+    if (c.Popup && c.POPUP_TYPE) {
+        const p = new c.Popup(box, c.POPUP_TYPE.TEXT, '', {
+            okButton: '关闭', wide: true, large: true, allowVerticalScrolling: false,
+        });
+        p.show();
+        try {
+            const dlg = p.dlg || p.popup;
+            if (dlg && dlg.classList) dlg.classList.add('stdm-popup');
+        } catch { /* 忽略 */ }
+    } else {
+        box.classList.add('stdm-fallback');
+        document.body.appendChild(box);
+    }
+
+    await renderHistory(box);
+}
+
+/* ------------------------------------------------------------------ *
+ *  打开主面板
  * ------------------------------------------------------------------ */
 
 async function openModal() {
@@ -693,14 +977,12 @@ async function openModal() {
             onClose: () => { rootEl = null; currentPopup = null; },
         });
         currentPopup.show();
-        // 让 Popup 外层容器带上我们的标记，方便 CSS 精确控制尺寸
         try {
             const dlg = currentPopup.dlg || currentPopup.popup;
             if (dlg && dlg.classList) dlg.classList.add('stdm-popup');
         } catch { /* 忽略 */ }
         await switchTab(state.tab);
     } else {
-        // 极旧版本回退：直接挂到 body（可能不全屏，但至少能用）
         content.classList.add('stdm-fallback');
         document.body.appendChild(content);
         await switchTab(state.tab);
@@ -734,7 +1016,7 @@ function mount() {
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <p style="font-size:.85em;opacity:.8;">批量管理预设、世界书、角色卡、聊天记录和主题美化方案。删除前自动备份，可一键撤销。</p>
+            <p style="font-size:.85em;opacity:.8;">批量管理预设、世界书、角色卡、聊天记录和主题美化方案。删除前自动备份，可一键撤销或从历史还原。</p>
             <div class="menu_button menu_button_icon" id="stdm_open_btn">
                 <i class="fa-solid fa-folder-tree"></i><span>打开数据管家</span>
             </div>

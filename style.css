@@ -405,6 +405,117 @@ dialog.popup.stdm-popup,
     height: 100dvh;
 }
 
+/* ---------- 删除历史面板 ---------- */
+.stdm-history {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: min(520px, 72vh);
+    text-align: left;
+}
+
+.stdm-hist-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 12px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--stdm-line-soft);
+}
+
+.stdm-hist-title {
+    font-weight: 650;
+    font-size: 1.08em;
+    margin-right: auto;
+    background: linear-gradient(90deg, #fff, #c9d3ff 60%, var(--stdm-accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.stdm-hist-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 2px 10px;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.stdm-hist-list::-webkit-scrollbar { width: 9px; }
+.stdm-hist-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.stdm-hist-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--stdm-line-soft);
+}
+
+.stdm-hist-info { flex: 1 1 220px; min-width: 0; }
+
+.stdm-hist-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.stdm-badge {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    color: #cdd7ff;
+    background: rgba(124, 156, 255, 0.16);
+    border: 1px solid rgba(124, 156, 255, 0.3);
+    white-space: nowrap;
+}
+
+.stdm-hist-count { font-size: 0.82em; font-weight: 500; color: var(--stdm-text); }
+.stdm-hist-time { font-size: 0.78em; color: var(--stdm-text-dim); font-variant-numeric: tabular-nums; }
+
+.stdm-hist-names {
+    font-size: 0.82em;
+    color: var(--stdm-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stdm-hist-actions { flex: 0 0 auto; display: flex; gap: 6px; }
+.stdm-hist-actions .stdm_btn { padding: 7px 12px; font-size: 0.8em; border-radius: 8px; }
+
+.stdm-hist-foot {
+    flex: 0 0 auto;
+    padding: 10px 4px 2px;
+    font-size: 0.76em;
+    color: var(--stdm-text-dim);
+    border-top: 1px solid var(--stdm-line-soft);
+}
+
+.stdm-empty {
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--stdm-text-dim);
+    font-size: 0.92em;
+}
+
+@media (pointer: coarse), (max-width: 720px) {
+    .stdm-hist-actions { flex: 1 1 100%; margin-top: 6px; }
+    .stdm-hist-actions .stdm_btn { flex: 1 1 auto; padding: 9px 8px; text-align: center; }
+}
+
 /* ---------- 工具类 ---------- */
 .stdm_flexrow { display: flex; gap: 8px; align-items: center; }
 .stdm_spacer { flex: 1 1 auto; }
