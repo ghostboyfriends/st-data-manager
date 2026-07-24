@@ -1,39 +1,85 @@
 /* ============================================================
    数据管家 · Data Manager
-   面板由 SillyTavern 内置 Popup 承载，样式挂在内容根 .stdm-root 上。
-   手机端全屏由酒馆 popup 系统负责，这里只做内部布局与配色。
+   面板由 SillyTavern 内置 Popup 承载。配色不跟随酒馆主题，
+   由 data-theme 属性切换（aurora / rose / teal / amber）。
    ============================================================ */
 
-.stdm-root {
+/* ---------- 主题变量（默认 = aurora 星霜）---------- */
+.stdm-root,
+.stdm-popup {
+    --stdm-panel: #14151e;
     --stdm-accent: #7c9cff;
     --stdm-accent-2: #b18cff;
+    --stdm-accent-rgb: 124, 156, 255;
+    --stdm-title-mid: #c9d3ff;
+    --stdm-danger: #ff6b6b;
+    --stdm-danger-2: #ff4d7d;
+    --stdm-danger-rgb: 255, 107, 107;
+    --stdm-badge-rgb: 124, 156, 255;
+    --stdm-badge-fg: #cdd7ff;
+    --stdm-text: #e8eaf2;
+    --stdm-text-rgb: 232, 234, 242;
+
+    /* 派生 / 中性（跨主题通用）*/
+    --stdm-text-dim: rgba(var(--stdm-text-rgb), 0.5);
     --stdm-glass-hi: rgba(255, 255, 255, 0.06);
     --stdm-line: rgba(255, 255, 255, 0.10);
     --stdm-line-soft: rgba(255, 255, 255, 0.06);
-    --stdm-text: #e8eaf2;
-    --stdm-text-dim: rgba(232, 234, 242, 0.5);
     --stdm-radius-sm: 11px;
-
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-    min-height: min(560px, 74vh);
-    box-sizing: border-box;
-    color: var(--stdm-text);
-    text-align: left;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
 }
 
-.stdm-root *,
-.stdm-root *::before,
-.stdm-root *::after { box-sizing: border-box; }
+.stdm-root[data-theme="rose"],
+.stdm-popup[data-theme="rose"] {
+    --stdm-panel: #1b1319;
+    --stdm-accent: #e06aa0;
+    --stdm-accent-2: #f3a7c4;
+    --stdm-accent-rgb: 224, 106, 160;
+    --stdm-title-mid: #f3c4d6;
+    --stdm-danger: #e0557f;
+    --stdm-danger-2: #c73e78;
+    --stdm-danger-rgb: 224, 85, 127;
+    --stdm-badge-rgb: 232, 185, 106;
+    --stdm-badge-fg: #f0d29a;
+    --stdm-text: #f2e6ec;
+    --stdm-text-rgb: 242, 230, 236;
+}
 
-/* 让承载我们的酒馆 popup 变成深色实底 + 尽量大 */
+.stdm-root[data-theme="teal"],
+.stdm-popup[data-theme="teal"] {
+    --stdm-panel: #0f1720;
+    --stdm-accent: #35d0c0;
+    --stdm-accent-2: #3aa0ff;
+    --stdm-accent-rgb: 53, 208, 192;
+    --stdm-title-mid: #a7e8e0;
+    --stdm-danger: #ff6b6b;
+    --stdm-danger-2: #ff4d7d;
+    --stdm-danger-rgb: 255, 107, 107;
+    --stdm-badge-rgb: 53, 208, 192;
+    --stdm-badge-fg: #a7e8e0;
+    --stdm-text: #e2f0f0;
+    --stdm-text-rgb: 226, 240, 240;
+}
+
+.stdm-root[data-theme="amber"],
+.stdm-popup[data-theme="amber"] {
+    --stdm-panel: #17130c;
+    --stdm-accent: #e89b3c;
+    --stdm-accent-2: #f0c66a;
+    --stdm-accent-rgb: 232, 155, 60;
+    --stdm-title-mid: #f0d9a2;
+    --stdm-danger: #e8724c;
+    --stdm-danger-2: #d9542f;
+    --stdm-danger-rgb: 232, 114, 76;
+    --stdm-badge-rgb: 240, 198, 106;
+    --stdm-badge-fg: #f0d9a2;
+    --stdm-text: #f2ebdc;
+    --stdm-text-rgb: 242, 235, 220;
+}
+
+/* ---------- 承载弹窗：固定深色实底 ---------- */
 dialog.popup.stdm-popup,
 .popup.stdm-popup {
-    background: #14151e !important;
+    background: var(--stdm-panel) !important;
     color: var(--stdm-text);
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 16px;
@@ -52,9 +98,26 @@ dialog.popup.stdm-popup,
 }
 
 .stdm-popup .popup-content > .stdm-root { flex: 1 1 auto; }
-
-/* popup 底部的“关闭”按钮区域稍微收紧 */
 .stdm-popup .popup-controls { padding: 8px 12px; }
+
+/* ---------- 内容根 ---------- */
+.stdm-root {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: min(560px, 74vh);
+    box-sizing: border-box;
+    color: var(--stdm-text);
+    background: transparent;
+    text-align: left;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.stdm-root *,
+.stdm-root *::before,
+.stdm-root *::after { box-sizing: border-box; }
 
 /* ---------- 头部 ---------- */
 #stdm_header {
@@ -73,7 +136,7 @@ dialog.popup.stdm-popup,
     font-size: 1.1em;
     letter-spacing: 0.2px;
     margin-right: auto;
-    background: linear-gradient(90deg, #fff, #c9d3ff 60%, var(--stdm-accent-2));
+    background: linear-gradient(90deg, #fff, var(--stdm-title-mid) 60%, var(--stdm-accent-2));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -90,7 +153,19 @@ dialog.popup.stdm-popup,
     margin: 0;
 }
 
-/* ---------- 标签页（横向可滑）---------- */
+.stdm_theme_sel {
+    color: var(--stdm-text);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--stdm-line);
+    border-radius: var(--stdm-radius-sm);
+    padding: 7px 10px;
+    font-size: 0.82em;
+    outline: none;
+    cursor: pointer;
+}
+.stdm_theme_sel:focus { border-color: var(--stdm-accent); }
+
+/* ---------- 标签页 ---------- */
 #stdm_tabs {
     display: flex;
     gap: 2px;
@@ -129,7 +204,7 @@ dialog.popup.stdm-popup,
     height: 2.5px;
     border-radius: 3px;
     background: linear-gradient(90deg, var(--stdm-accent), var(--stdm-accent-2));
-    box-shadow: 0 0 12px rgba(124, 156, 255, 0.7);
+    box-shadow: 0 0 12px rgba(var(--stdm-accent-rgb), 0.7);
 }
 
 /* ---------- 工具栏 ---------- */
@@ -162,7 +237,7 @@ dialog.popup.stdm-popup,
 #stdm_toolbar select:focus {
     border-color: var(--stdm-accent);
     background: rgba(0, 0, 0, 0.42);
-    box-shadow: 0 0 0 3px rgba(124, 156, 255, 0.18);
+    box-shadow: 0 0 0 3px rgba(var(--stdm-accent-rgb), 0.18);
 }
 
 #stdm_search { flex: 1 1 200px; min-width: 130px; }
@@ -185,23 +260,27 @@ dialog.popup.stdm-popup,
 .stdm_btn[disabled] { opacity: 0.35; cursor: not-allowed; transform: none; }
 
 #stdm_delete {
-    background: linear-gradient(135deg, #ff6b6b, #ff4d7d);
+    background: linear-gradient(135deg, var(--stdm-danger), var(--stdm-danger-2));
     border-color: transparent;
     color: #fff;
     font-weight: 600;
-    box-shadow: 0 6px 18px -6px rgba(255, 77, 125, 0.6);
+    box-shadow: 0 6px 18px -6px rgba(var(--stdm-danger-rgb), 0.6);
 }
 #stdm_delete[disabled] { background: var(--stdm-glass-hi); color: var(--stdm-text); box-shadow: none; }
 
-.stdm_btn.stdm_danger { border-color: rgba(255, 107, 107, 0.4); color: #ff9a9a; }
-#stdm_undo { border-color: rgba(124, 156, 255, 0.4); color: #b9c8ff; }
+.stdm_btn.stdm_danger {
+    border-color: rgba(var(--stdm-danger-rgb), 0.45);
+    color: var(--stdm-danger-2);
+}
+
+#stdm_undo { border-color: rgba(var(--stdm-accent-rgb), 0.4); color: var(--stdm-title-mid); }
 
 @media (hover: hover) and (pointer: fine) {
     .stdm_tab:hover { color: var(--stdm-text); background: var(--stdm-glass-hi); }
     .stdm_btn:hover { background: rgba(255, 255, 255, 0.13); border-color: rgba(255, 255, 255, 0.2); }
-    #stdm_delete:hover:not([disabled]) { box-shadow: 0 10px 26px -6px rgba(255, 77, 125, 0.75); filter: brightness(1.06); }
-    .stdm_btn.stdm_danger:hover { background: rgba(255, 107, 107, 0.16); border-color: rgba(255, 107, 107, 0.6); }
-    #stdm_undo:hover:not([disabled]) { background: rgba(124, 156, 255, 0.14); }
+    #stdm_delete:hover:not([disabled]) { box-shadow: 0 10px 26px -6px rgba(var(--stdm-danger-rgb), 0.75); filter: brightness(1.06); }
+    .stdm_btn.stdm_danger:hover { background: rgba(var(--stdm-danger-rgb), 0.16); border-color: rgba(var(--stdm-danger-rgb), 0.6); }
+    #stdm_undo:hover:not([disabled]) { background: rgba(var(--stdm-accent-rgb), 0.14); }
     .stdm_row:hover { background: var(--stdm-glass-hi); border-color: var(--stdm-line); }
 }
 
@@ -317,7 +396,6 @@ dialog.popup.stdm-popup,
     white-space: nowrap;
 }
 
-/* 操作按钮：桌面在右侧、hover 淡入；触屏/窄屏换到第二行铺开、常显 */
 .stdm_rowactions {
     flex: 0 0 auto;
     display: flex;
@@ -333,7 +411,6 @@ dialog.popup.stdm-popup,
     .stdm_row:hover .stdm_rowactions { opacity: 1; }
 }
 
-/* 触屏或窄屏：操作按钮独占一行、均分、点击区大 */
 @media (pointer: coarse), (max-width: 720px) {
     .stdm_rowactions {
         opacity: 1 !important;
@@ -348,6 +425,7 @@ dialog.popup.stdm-popup,
     #stdm_delete { flex: 1 1 100% !important; padding: 14px; font-size: 0.98em; }
     .stdm_tab { padding: 12px 16px; font-size: 0.94em; }
     .stdm_name { font-size: 1em; }
+    .stdm_theme_sel { flex: 1 1 auto; padding: 10px; font-size: 0.9em; }
 }
 
 /* ---------- 状态栏 ---------- */
@@ -361,7 +439,7 @@ dialog.popup.stdm-popup,
     background: linear-gradient(0deg, rgba(0, 0, 0, 0.2), transparent);
 }
 
-/* ---------- 编辑器（放进第二个 popup 里）---------- */
+/* ---------- 编辑器 ---------- */
 .stdm-editor-wrap {
     display: flex;
     flex-direction: column;
@@ -375,7 +453,7 @@ dialog.popup.stdm-popup,
     flex: 1 1 auto;
     width: 100%;
     resize: none;
-    color: #dfe6ff;
+    color: var(--stdm-text);
     background: rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 11px;
@@ -389,8 +467,8 @@ dialog.popup.stdm-popup,
 }
 
 .stdm_editor_text:focus {
-    border-color: #7c9cff;
-    box-shadow: 0 0 0 3px rgba(124, 156, 255, 0.16);
+    border-color: var(--stdm-accent);
+    box-shadow: 0 0 0 3px rgba(var(--stdm-accent-rgb), 0.16);
 }
 
 .stdm_editor_hint { font-size: 0.78em; opacity: 0.65; }
@@ -400,7 +478,7 @@ dialog.popup.stdm-popup,
     position: fixed;
     inset: 0;
     z-index: 100000;
-    background: #14151e;
+    background: var(--stdm-panel);
     height: 100vh;
     height: 100dvh;
 }
@@ -428,7 +506,7 @@ dialog.popup.stdm-popup,
     font-weight: 650;
     font-size: 1.08em;
     margin-right: auto;
-    background: linear-gradient(90deg, #fff, #c9d3ff 60%, var(--stdm-accent-2));
+    background: linear-gradient(90deg, #fff, var(--stdm-title-mid) 60%, var(--stdm-accent-2));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -476,9 +554,9 @@ dialog.popup.stdm-popup,
     font-weight: 600;
     padding: 3px 10px;
     border-radius: 20px;
-    color: #cdd7ff;
-    background: rgba(124, 156, 255, 0.16);
-    border: 1px solid rgba(124, 156, 255, 0.3);
+    color: var(--stdm-badge-fg);
+    background: rgba(var(--stdm-badge-rgb), 0.16);
+    border: 1px solid rgba(var(--stdm-badge-rgb), 0.3);
     white-space: nowrap;
 }
 

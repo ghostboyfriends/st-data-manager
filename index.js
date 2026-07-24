@@ -368,6 +368,22 @@ const adapters = {
  *  状态
  * ------------------------------------------------------------------ */
 
+/* 配色主题（不跟随酒馆，独立切换，记忆在本地） */
+const THEMES = [
+    { id: 'aurora', name: '星霜 Aurora' },
+    { id: 'rose', name: '暗玫瑰 Rosé' },
+    { id: 'teal', name: '深海 Teal' },
+    { id: 'amber', name: '琥珀 Amber' },
+];
+
+function loadTheme() {
+    try {
+        const t = localStorage.getItem('stdm_theme');
+        if (t && THEMES.some(x => x.id === t)) return t;
+    } catch { /* 忽略 */ }
+    return 'aurora';
+}
+
 const state = {
     tab: 'presets',
     items: [],
@@ -378,12 +394,32 @@ const state = {
     characters: [],
     lastBatch: null,
     autoDownload: true,
+    theme: loadTheme(),
 };
 
 let currentPopup = null;
 let rootEl = null;
 
 function $(sel) { return rootEl ? rootEl.querySelector(sel) : null; }
+
+/** 切换配色主题：更新内容根 + 所有已打开的酒馆弹窗外层 */
+function applyTheme(name) {
+    state.theme = name;
+    try { localStorage.setItem('stdm_theme', name); } catch { /* 忽略 */ }
+    if (rootEl) rootEl.dataset.theme = name;
+    document.querySelectorAll('.stdm-popup').forEach(el => { el.dataset.theme = name; });
+}
+
+/** 给一个 Popup 的外层加上标记类和当前主题，让 CSS 生效 */
+function markPopup(popup) {
+    try {
+        const dlg = popup.dlg || popup.popup;
+        if (dlg && dlg.classList) {
+            dlg.classList.add('stdm-popup');
+            dlg.dataset.theme = state.theme;
+        }
+    } catch { /* 忽略 */ }
+}
 
 /* ------------------------------------------------------------------ *
  *  构建面板内容
@@ -393,9 +429,11 @@ function buildContent() {
     const root = document.createElement('div');
     root.id = 'stdm_modal';
     root.className = 'stdm-root';
+    root.dataset.theme = state.theme;
     root.innerHTML = `
         <div id="stdm_header">
             <span class="stdm_title">🗂️ ${EXT_NAME}</span>
+            <select id="stdm_theme" class="stdm_theme_sel" title="配色主题"></select>
             <label class="stdm_flexrow">
                 <input type="checkbox" id="stdm_autodl" checked> 删除时下载备份
             </label>
@@ -444,6 +482,16 @@ function buildContent() {
     root.querySelector('#stdm_history').addEventListener('click', openHistory);
     root.querySelector('#stdm_undo').addEventListener('click', undoLast);
     root.querySelector('#stdm_autodl').addEventListener('change', (e) => { state.autoDownload = e.target.checked; });
+
+    const themeSel = root.querySelector('#stdm_theme');
+    for (const t of THEMES) {
+        const o = document.createElement('option');
+        o.value = t.id;
+        o.textContent = t.name;
+        themeSel.appendChild(o);
+    }
+    themeSel.value = state.theme;
+    themeSel.addEventListener('change', (e) => applyTheme(e.target.value));
     root.querySelector('#stdm_charpick').addEventListener('change', (e) => {
         const opt = e.target.selectedOptions[0];
         state.avatar = e.target.value;
@@ -684,6 +732,7 @@ async function editItem(item) {
         const p = new c.Popup(box, c.POPUP_TYPE.CONFIRM, '', {
             okButton: '保存', cancelButton: '取消', wide: true, large: true, allowVerticalScrolling: false,
         });
+        markPopup(p);
         const result = await p.show();
         const affirmative = c.POPUP_RESULT ? c.POPUP_RESULT.AFFIRMATIVE : 1;
         if (result !== affirmative) return;
@@ -948,12 +997,10 @@ async function openHistory() {
             okButton: '关闭', wide: true, large: true, allowVerticalScrolling: false,
         });
         p.show();
-        try {
-            const dlg = p.dlg || p.popup;
-            if (dlg && dlg.classList) dlg.classList.add('stdm-popup');
-        } catch { /* 忽略 */ }
+        markPopup(p);
     } else {
         box.classList.add('stdm-fallback');
+        box.dataset.theme = state.theme;
         document.body.appendChild(box);
     }
 
@@ -977,13 +1024,11 @@ async function openModal() {
             onClose: () => { rootEl = null; currentPopup = null; },
         });
         currentPopup.show();
-        try {
-            const dlg = currentPopup.dlg || currentPopup.popup;
-            if (dlg && dlg.classList) dlg.classList.add('stdm-popup');
-        } catch { /* 忽略 */ }
+        markPopup(currentPopup);
         await switchTab(state.tab);
     } else {
         content.classList.add('stdm-fallback');
+        content.dataset.theme = state.theme;
         document.body.appendChild(content);
         await switchTab(state.tab);
     }
